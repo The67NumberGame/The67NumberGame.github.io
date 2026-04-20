@@ -58,7 +58,11 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-b);color:v
 .title{font-family:var(--font-t);font-size:clamp(22px,4vw,38px);letter-spacing:.5px;line-height:1.2}
 .divider{border:none;height:2px;background:linear-gradient(to right,var(--amber),#e8c07a,var(--amber));margin:12px 0 16px;border-radius:2px;opacity:.7}
 .title-67{color:var(--amber)}
-.controls-row{display:flex;align-items:center;justify-content:flex-end;gap:22px;margin-bottom:32px}
+.controls-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:32px}
+.controls-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.controls-right{display:flex;align-items:center;gap:22px;flex-shrink:0}
+.yest-btn{font-family:var(--font-b);font-size:15px;background:none;border:none;cursor:pointer;text-decoration:underline;color:var(--black);padding:0;white-space:nowrap}
+.yest-btn:hover{opacity:.65}
 
 .help-btn{width:32px;height:32px;border-radius:50%;border:2px solid var(--black);background:transparent;font-family:var(--font-b);font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s;flex-shrink:0}
 .help-btn:hover{background:var(--black);color:var(--bg)}
@@ -117,8 +121,9 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-b);color:v
 .win-popup .win-time-val{font-size:22px;font-weight:700;display:block;text-align:center;margin-top:6px}
 .win-popup .win-sub{font-size:12px;color:#888;text-align:center;margin-top:10px}
 
-.rule-box{background:#e9e4d9;border-radius:8px;padding:10px 12px;margin-top:10px}
-.rule-box .rule-head{font-weight:700;font-size:13px;margin-bottom:4px}
+.footer{text-align:center;padding:18px 0 10px;border-top:1px solid #ccc8be;margin-top:28px;display:flex;justify-content:center;flex-wrap:wrap;gap:18px}
+.footer a{font-family:var(--font-b);font-size:12px;color:var(--grey);text-decoration:none}
+.footer a:hover{color:var(--black);text-decoration:underline}
 </style>
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6598198298283330" crossorigin="anonymous"></script>
 </head>
@@ -152,9 +157,15 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-b);color:v
     <hr class="divider">
 
     <div class="controls-row">
-      <button class="help-btn" id="helpBtn" title="How to play">?</button>
-      <button class="hint-btn" id="hintBtn">Hint</button>
-      <span class="timer" id="timerDisplay">00:00:00</span>
+      <div class="controls-left">
+        <button class="yest-btn" onclick="window.open('yesterday.html','_blank')">Yesterday's Puzzle</button>
+        <button class="yest-btn" onclick="window.open('solutions-yesterday.html','_blank')">Yesterday's Solution</button>
+      </div>
+      <div class="controls-right">
+        <button class="help-btn" id="helpBtn" title="How to play">?</button>
+        <button class="hint-btn" id="hintBtn">Hint</button>
+        <span class="timer" id="timerDisplay">00:00:00</span>
+      </div>
     </div>
 
     <div class="nums-row" id="numsRow"></div>
@@ -174,6 +185,12 @@ html,body{min-height:100%;background:var(--bg);font-family:var(--font-b);color:v
     </div>
 
     <div class="day-info" id="dayInfo"></div>
+    <div class="footer">
+      <a href="privacy-policy.html" target="_blank">Privacy Policy</a>
+      <a href="terms.html" target="_blank">Terms and Conditions</a>
+      <a href="about.html" target="_blank">About Us</a>
+      <a href="contact.html" target="_blank">Contact</a>
+    </div>
     <div class="ad-row">
       <!-- bottom ad -->
       <ins class="adsbygoogle"
@@ -468,6 +485,7 @@ let usedNumIndices = new Set();
 let timerInterval = null;
 let secondsElapsed = 0;
 let won = false;
+let lastValidResult = null; // last successfully evaluated result
 
 // ═══════════════════════════════════════════════
 //  TIMER
@@ -528,26 +546,31 @@ function updateDisplay() {
     resEl.textContent = '0';
     resEl.className = 'result';
     errEl.textContent = '';
+    lastValidResult = null;
     return;
   }
 
   const { val, error, allUsed } = evaluate(expression, puzzleNums);
 
   if (error) {
-    // Only show error styling if the expression seems "complete enough"
-    // (has at least one number used)
     const hasNum = /\d/.test(expression);
     box.className = 'expr-box' + (hasNum ? ' err' : '');
-    resEl.textContent = hasNum ? 'Error' : '0';
-    resEl.className = 'result' + (hasNum ? ' err' : '');
+    // Show last valid result if we have one, otherwise show 0
+    const displayVal = lastValidResult !== null ? lastValidResult : '0';
+    resEl.textContent = displayVal;
+    resEl.className = 'result';
     errEl.textContent = hasNum ? 'Error: ' + niceError(error) : '';
   } else {
-    box.className = 'expr-box' + (val === 67 && allUsed ? ' ok' : '');
+    // Valid result — store it, but only show win-check if all numbers used
+    lastValidResult = val;
+    // Check "make 67 without using all numbers" — not allowed
+    const allUsedCheck = allUsed;
+    box.className = 'expr-box' + (val === 67 && allUsedCheck ? ' ok' : '');
     resEl.textContent = val;
-    resEl.className = 'result' + (val === 67 && allUsed ? ' win' : '');
-    errEl.textContent = val === 67 && !allUsed ? 'Use all four numbers!' : '';
+    resEl.className = 'result' + (val === 67 && allUsedCheck ? ' win' : '');
+    errEl.textContent = val === 67 && !allUsedCheck ? 'Use all four numbers!' : '';
 
-    if (val === 67 && allUsed && !won) triggerWin();
+    if (val === 67 && allUsedCheck && !won) triggerWin();
   }
 }
 
@@ -609,6 +632,7 @@ document.getElementById('clearBtn').addEventListener('click', () => {
   if (won) return;
   expression = '';
   usedNumIndices.clear();
+  lastValidResult = null;
   renderNums();
   updateDisplay();
 });
