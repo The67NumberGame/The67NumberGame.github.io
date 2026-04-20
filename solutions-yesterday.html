@@ -70,135 +70,106 @@ function getYesterdaysPuzzle() {
 }
 
 // ── Solver ──
-// Generate all expressions using 4 numbers with +, -, *, /, ^, !, ()
-// We enumerate all permutations of numbers and all binary tree structures
+// Returns array of {val, expr} for all ways to combine the given numbers.
+// Rules: !, ^ must use raw puzzle numbers only.
 
-function factorial(n) {
-  if (n < 0 || n > 20 || !Number.isInteger(n)) return null;
+function fact(n) {
+  if (!Number.isInteger(n) || n < 0 || n > 20) return null;
   let f = 1; for (let i = 2; i <= n; i++) f *= i;
   return f;
 }
 
+// Generate all permutations of an array
 function perms(arr) {
-  if (arr.length <= 1) return [arr];
-  const result = [];
-  for (let i = 0; i < arr.length; i++) {
-    const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
-    for (const p of perms(rest)) result.push([arr[i], ...p]);
-  }
-  return result;
-}
-
-// Each "value" is {val, expr}
-// Apply factorial to a raw number only
-function applyFact(v, isRaw) {
-  if (!isRaw) return null;
-  const f = factorial(v.val);
-  if (f === null || !isFinite(f) || f > 1e12) return null;
-  return { val: f, expr: `${v.expr}!` };
-}
-
-function applyPow(base, exp, expIsRaw) {
-  if (!expIsRaw) return null;
-  if (exp.val < 0 || exp.val > 10) return null;
-  const r = Math.pow(base.val, exp.val);
-  if (!isFinite(r) || Math.abs(r) > 1e12) return null;
-  return { val: r, expr: `(${base.expr})^${exp.expr}` };
-}
-
-// Generate all values reachable from a single number (with optional factorial)
-function singleVals(n) {
-  const base = { val: n, expr: String(n) };
-  const results = [{ v: base, isRaw: true }];
-  const f = factorial(n);
-  if (f !== null && isFinite(f) && f <= 1e12 && f !== n) {
-    results.push({ v: { val: f, expr: `${n}!` }, isRaw: false });
-  }
-  return results;
-}
-
-// Combine two value-sets with all binary operators
-function combine(aEntries, bEntries) {
+  if (arr.length === 0) return [[]];
+  if (arr.length === 1) return [[arr[0]]];
   const out = [];
-  const OPS = [
-    ['+', (a, b) => a + b, false],
-    ['-', (a, b) => a - b, false],
-    ['−', (a, b) => b - a, false], // b - a (reversed)
-    ['×', (a, b) => a * b, false],
-    ['÷', (a, b) => b === 0 ? null : a / b, false],
-    ['÷r', (a, b) => a === 0 ? null : b / a, false], // b / a
-  ];
-  for (const { v: a } of aEntries) {
-    for (const { v: b, isRaw: bRaw } of bEntries) {
-      // Addition
-      const sum = a.val + b.val;
-      if (isFinite(sum)) out.push({ val: sum, expr: `${a.expr}+${b.expr}` });
-      // Subtraction both ways
-      const sub1 = a.val - b.val;
-      if (isFinite(sub1)) out.push({ val: sub1, expr: `${a.expr}−${b.expr}` });
-      const sub2 = b.val - a.val;
-      if (isFinite(sub2)) out.push({ val: sub2, expr: `${b.expr}−${a.expr}` });
-      // Multiplication
-      const mul = a.val * b.val;
-      if (isFinite(mul) && Math.abs(mul) <= 1e12) out.push({ val: mul, expr: `${a.expr}×${b.expr}` });
-      // Division both ways
-      if (b.val !== 0) {
-        const div1 = a.val / b.val;
-        if (isFinite(div1)) out.push({ val: div1, expr: `${a.expr}÷${b.expr}` });
-      }
-      if (a.val !== 0) {
-        const div2 = b.val / a.val;
-        if (isFinite(div2)) out.push({ val: div2, expr: `${b.expr}÷${a.expr}` });
-      }
-      // Power: base can be anything, exponent must be raw
-      if (bRaw && b.val >= 0 && b.val <= 10) {
-        const p = Math.pow(a.val, b.val);
-        if (isFinite(p) && Math.abs(p) <= 1e12) out.push({ val: p, expr: `(${a.expr})^${b.expr}` });
-      }
-      // Also a as raw exponent for b
-      // (handled when a and b are swapped in iteration, so skip)
-    }
+  for (let i = 0; i < arr.length; i++) {
+    const rest = arr.filter((_, j) => j !== i);
+    for (const p of perms(rest)) out.push([arr[i], ...p]);
   }
   return out;
 }
 
-// Build all expressions for an array of numbers
-function allExprs(nums) {
-  if (nums.length === 1) return singleVals(nums[0]);
-  const results = [];
-  // Split into two non-empty parts in all ways
-  for (let mask = 1; mask < (1 << nums.length) - 1; mask++) {
+// Split indices 0..n-1 into two non-empty groups in all ways
+// (keeping 0 always in left to avoid duplicate splits)
+function splits(n) {
+  const out = [];
+  for (let mask = 1; mask < (1 << n) - 1; mask++) {
+    if (!(mask & 1)) continue; // keep index 0 in left
     const left = [], right = [];
-    for (let i = 0; i < nums.length; i++) {
-      (mask >> i & 1 ? left : right).push(nums[i]);
+    for (let i = 0; i < n; i++) (mask >> i & 1 ? left : right).push(i);
+    out.push([left, right]);
+  }
+  return out;
+}
+
+// Each result: { val: number, expr: string, isRaw: bool }
+// isRaw = true means this value came directly from a single puzzle number (usable as ! or ^ exponent)
+
+function allResults(nums) {
+  if (nums.length === 1) {
+    const n = nums[0];
+    const base = [{ val: n, expr: String(n), isRaw: true }];
+    // Also offer n! as a derived value from this single raw number
+    const f = fact(n);
+    if (f !== null && isFinite(f) && f <= 1e12) {
+      base.push({ val: f, expr: `${n}!`, isRaw: false });
     }
-    // Avoid duplicates: only take masks where first element of nums is in left
-    if (!(mask & 1)) continue;
-    const leftExprs = allExprs(left);
-    const rightExprs = allExprs(right);
-    const combined = combine(leftExprs, rightExprs);
-    results.push(...combined);
+    return base;
+  }
+
+  const results = [];
+  for (const [leftIdx, rightIdx] of splits(nums.length)) {
+    const leftNums = leftIdx.map(i => nums[i]);
+    const rightNums = rightIdx.map(i => nums[i]);
+    const leftRes = allResults(leftNums);
+    const rightRes = allResults(rightNums);
+
+    for (const L of leftRes) {
+      for (const R of rightRes) {
+        // + 
+        push(results, L.val + R.val, `(${L.expr}+${R.expr})`);
+        // - both ways
+        push(results, L.val - R.val, `(${L.expr}-${R.expr})`);
+        push(results, R.val - L.val, `(${R.expr}-${L.expr})`);
+        // *
+        push(results, L.val * R.val, `(${L.expr}×${R.expr})`);
+        // / both ways
+        if (R.val !== 0) push(results, L.val / R.val, `(${L.expr}÷${R.expr})`);
+        if (L.val !== 0) push(results, R.val / L.val, `(${R.expr}÷${L.expr})`);
+        // ^ : exponent must be raw
+        if (R.isRaw && R.val >= 0 && R.val <= 10) {
+          const p = Math.pow(L.val, R.val);
+          if (isFinite(p) && Math.abs(p) <= 1e12) push(results, p, `(${L.expr}^${R.expr})`);
+        }
+        if (L.isRaw && L.val >= 0 && L.val <= 10) {
+          const p = Math.pow(R.val, L.val);
+          if (isFinite(p) && Math.abs(p) <= 1e12) push(results, p, `(${R.expr}^${L.expr})`);
+        }
+      }
+    }
   }
   return results;
 }
 
-function solve(nums) {
-  const solutions = new Set();
-  const resultExprs = [];
+function push(arr, val, expr) {
+  if (isFinite(val) && Math.abs(val) <= 1e12) arr.push({ val, expr, isRaw: false });
+}
 
-  // Try all permutations
+function solve(nums) {
+  const seen = new Set();
+  const solutions = [];
   for (const perm of perms(nums)) {
-    // allExprs generates all tree structures
-    const exprs = allExprs(perm);
-    for (const e of exprs) {
-      const v = Math.round(e.val * 1e9) / 1e9;
-      if (v === 67 && !solutions.has(e.expr)) {
-        solutions.add(e.expr);
-        resultExprs.push(e.expr);
+    for (const r of allResults(perm)) {
+      const v = Math.round(r.val * 1e9) / 1e9;
+      if (v === 67 && !seen.has(r.expr)) {
+        seen.add(r.expr);
+        solutions.push(r.expr);
       }
     }
   }
-  return resultExprs;
+  return solutions;
 }
 
 // ── UI ──
